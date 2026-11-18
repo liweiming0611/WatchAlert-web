@@ -113,6 +113,16 @@ async function getCookieConvertToken() {
     }
 }
 
+// OIDC 登录态保存在 httpOnly cookie 中，JS 无法直接清除，必须由后端下发失效 cookie
+async function oidcLogout() {
+    try {
+        // 退出登录会改变登录态，用 POST 避免被第三方页面触发；返回体里带 IdP 登出地址
+        return await http('post', `/api/oidc/logout`);
+    } catch (error) {
+        return error
+    }
+}
+
 export {
     getUserList,
     loginUser,
@@ -123,5 +133,6 @@ export {
     getUserInfo,
     changeUserPass,
     getOidcInfo,
-    getCookieConvertToken
+    getCookieConvertToken,
+    oidcLogout
 }

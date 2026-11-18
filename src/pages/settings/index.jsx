@@ -204,7 +204,14 @@ export const SystemSettings = () => {
                 clientID: res?.data?.oidcConfig?.clientID || "",
                 upperURI: res?.data?.oidcConfig?.upperURI || "",
                 redirectURI: res?.data?.oidcConfig?.redirectURI || "",
+                // 可选：填写后退出登录会跳 IdP 登出端点一并清理 IdP 会话
+                postLogoutRedirectURI: res?.data?.oidcConfig?.postLogoutRedirectURI || "",
                 domain: res?.data?.oidcConfig?.domain || "",
+                scope: res?.data?.oidcConfig?.scope || "openid profile email",
+                // 留空 = 按 IdP Discovery 声明的能力自动协商（推荐）
+                tokenAuthMethod: res?.data?.oidcConfig?.tokenAuthMethod || "auto",
+                // 后端以 nil 表示"未配置"并按开启处理，这里回显为 true 保持一致
+                pkceEnable: res?.data?.oidcConfig?.pkceEnable !== false,
             }
 
             //  确保表单字段正确初始化
@@ -786,9 +793,18 @@ export const SystemSettings = () => {
                                         <MyFormItem
                                             name="clientSecret"
                                             label="客户端密钥"
-                                            rules={[{required: true, message: '请输入客户端密钥'}]}
+                                            rules={[({getFieldValue}) => ({
+                                                validator(_, value) {
+                                                    // 公共客户端（认证方式 none）没有密钥；其余方式必填。
+                                                    // 留空保存时后端会沿用已存的密钥，不需要每次重填。
+                                                    const method = getFieldValue(['oidcConfig', 'tokenAuthMethod']);
+                                                    if (method === 'none' || value) return Promise.resolve();
+                                                    return Promise.reject(new Error('请输入客户端密钥，或将客户端认证方式改为 none'));
+                                                }
+                                            })]}
+                                            extra="留空保存时会沿用已配置的密钥。"
                                         >
-                                            <Input placeholder="******"/>
+                                            <Input.Password placeholder="******"/>
                                         </MyFormItem>
 
                                         <MyFormItem
@@ -806,6 +822,14 @@ export const SystemSettings = () => {
                                         >
                                             <Input placeholder="例如: http://w8t.watchalert.tech:3000/api/oidc/callback"/>
                                         </MyFormItem>
+
+                                        <MyFormItem
+                                            name="postLogoutRedirectURI"
+                                            label="登出回跳地址"
+                                            extra="可选。填写后退出登录会跳转 IdP 的 end_session_endpoint 一并清理 IdP 会话，需先在 IdP 侧登记该地址；留空则只清理本系统登录态。"
+                                        >
+                                            <Input placeholder="例如: http://w8t.watchalert.tech:3000/login"/>
+                                        </MyFormItem>
                                         
                                         <MyFormItem
                                             name="domain"
@@ -813,6 +837,37 @@ export const SystemSettings = () => {
                                             rules={[{required: true, message: '请输入统一域名'}]}
                                         >
                                             <Input placeholder="例如: watchalert.tech"/>
+                                        </MyFormItem>
+
+                                        <MyFormItem
+                                            name="scope"
+                                            label="授权 Scope"
+                                        >
+                                            <Input placeholder="openid profile email（留空使用默认值）"/>
+                                        </MyFormItem>
+
+                                        <MyFormItem
+                                            name="tokenAuthMethod"
+                                            label="客户端认证方式"
+                                            extra="换取 Token 时 client_id/client_secret 的提交位置。auto 会按 IdP Discovery 声明的 token_endpoint_auth_methods_supported 自动选择：Azure AD、Auth0、Okta、Google 通常需要 Basic；只接受表单参数的 IdP 选 POST；公共客户端选 none。"
+                                        >
+                                            <Select
+                                                options={[
+                                                    {value: 'auto', label: '自动协商（推荐）'},
+                                                    {value: 'client_secret_basic', label: 'client_secret_basic（HTTP Basic）'},
+                                                    {value: 'client_secret_post', label: 'client_secret_post（表单参数）'},
+                                                    {value: 'none', label: 'none（公共客户端，无密钥）'},
+                                                ]}
+                                            />
+                                        </MyFormItem>
+
+                                        <MyFormItem
+                                            name="pkceEnable"
+                                            label="启用 PKCE"
+                                            valuePropName="checked"
+                                            extra="授权请求会携带 code_challenge 并在回调时提交 code_verifier，对不支持 PKCE 的 IdP 可关闭。IdP 若未声明支持 S256，后端会自动跳过 PKCE。"
+                                        >
+                                            <Switch/>
                                         </MyFormItem>
                                     </MyFormItemGroup>
                                 </div>

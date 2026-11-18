@@ -22,7 +22,7 @@ import {
 import {Link, useNavigate} from 'react-router-dom';
 import {Menu, Layout, Typography, Dropdown, message, Spin, theme, Popover, Avatar, Divider} from 'antd';
 import logoIcon from "../../img/logo.svg";
-import {getUserInfo} from "../../api/user";
+import {getUserInfo, oidcLogout} from "../../api/user";
 import {getTenantList, getTenant} from "../../api/tenant";
 
 const { Sider } = Layout;
@@ -288,11 +288,21 @@ export const ComponentSider = () => {
         return convertToMenuItems(baseMenuItems);
     }, [userInfo, currentTenant, convertToMenuItems]);
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
+        // OIDC 登录态在 httpOnly cookie 中，需由后端下发失效 cookie，
+        // 否则退出后再访问 / 会被 /api/oidc/token 自动登录回去
+        const res = await oidcLogout()
+        // IdP 提供登出端点且配置了回跳地址时，跳转过去一并清理 IdP 会话，
+        // 否则下次点登录会被 IdP 免密直接带回
+        const idpLogoutUrl = res?.data?.data?.redirectUrl
         // 清除本地存储
         localStorage.clear()
         // 显示退出登录提示
         message.success('已退出登录');
+        if (idpLogoutUrl) {
+            window.location.href = idpLogoutUrl;
+            return;
+        }
         // 延迟跳转到登录页面，确保用户能看到提示
         setTimeout(() => {
             navigate("/login");

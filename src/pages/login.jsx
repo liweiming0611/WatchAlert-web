@@ -1,10 +1,9 @@
 'use client'
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import './global.css';
 import { checkUser, loginUser, registerUser, getOidcInfo } from '../api/user';
 import { message, Result, Button } from "antd";
-import { UserManager } from 'oidc-client';
 
 // 内联小图标（登录表单用）
 const UserIcon = () => (
@@ -48,8 +47,22 @@ export const Login = () => {
     const [showOidcButtons, setShowOidcButtons] = useState(false);
     const [adminExists, setAdminExists] = useState(null); // null: 加载中, false: 不存在, true: 存在
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const oidcError = searchParams.get('oidcError');
     const [serviceError, setServiceError] = useState(false)
     const [serviceErrorMsg, setServiceErrorMsg] = useState("服务暂时不可用，请稍后重试或联系管理员") // 新增：服务异常详细信息
+
+    // OIDC 回调失败时后端会带 oidcError 跳回登录页，这里把原因提示出来。
+    // 后端只回短码，避免把 IdP 地址、状态码等内部信息带到浏览器与访问日志。
+    useEffect(() => {
+        if (!oidcError) return;
+        const oidcErrorText = {
+            session_expired: '登录会话已过期，请重新登录',
+            access_denied: '身份提供方拒绝了本次授权',
+            oidc_failed: '登录失败，请联系管理员查看服务端日志',
+        };
+        message.error(`OIDC 登录失败: ${oidcErrorText[oidcError] || oidcError}`);
+    }, [oidcError]);
 
     // 检查是否已登录
     useEffect(() => {
@@ -154,18 +167,13 @@ export const Login = () => {
                 return;
             }
 
-            const oidcConfig = {
-                authority: res?.data?.upperURI,
-                client_id: res?.data?.clientID,
-                client_secret: res?.data?.clientSecret,
-                redirect_uri: res?.data?.redirectURI,
-                response_type: 'code',
-                scope: 'openid profile email',
-            };
-            const userManager = new UserManager(oidcConfig);
-            userManager.signinRedirect();
+            // 授权请求改由后端发起：state 与 PKCE 的 code_verifier 由后端保存并在回调时提交。
+            // 之前用 oidc-client 在前端拼授权 URL，库会强制附加 code_challenge 却只在
+            // 浏览器 sessionStorage 留 code_verifier，回调换取 token 时必然校验失败。
+            window.location.href = '/api/oidc/authorize';
         } catch (error) {
             console.error('获取 OIDC 信息失败:', error);
+            message.error('获取 OIDC 配置失败，请稍后重试');
         }
     }
 
